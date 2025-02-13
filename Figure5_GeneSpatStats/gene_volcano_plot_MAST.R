@@ -10,7 +10,10 @@ library(Seurat)
 #=============================================================================
 # File Paths and Directories
 #=============================================================================
-ROOT_DIR <- "/home/sam/FinalRGC_xenium/"               # Base directory for analysis
+DATA_DIR <- "/home/sam/MappingAllMurineRGCs/Data/"
+ROOT_DIR <- paste0(DATA_DIR, "Figure5_Outputs/")               # Base directory for analysis
+RUN_SUBSET <- c("w3", "art", "art_thin") # set to NA to run all masks
+dir.create(file.path(ROOT_DIR), showWarnings = FALSE)
 log2FC_thresh <- 0.26
 p_thresh <- 0.05
 seurat.method <- "MAST"
@@ -173,6 +176,38 @@ create_visual_scene_masks <- function(grid) {
                                            sector_fill_0 = 270, sector_fill_1 = 90,
                                            outer_fill = 20, inner_fill = 0)
   
+  visual_horizon_mask <- create_retinal_mask(grid, n_annuli = 1, n_sectors = 1, 
+                                             temporal_left = T, slope = 0,
+                                             sector_fill_0 = 0, sector_fill_1 = 365,
+                                             outer_fill = 1, inner_fill = 0) - (visual_floor_mask -
+                            create_retinal_mask(grid, n_annuli = 30, n_sectors = 24, 
+                                           temporal_left = T, slope = 3,
+                                           sector_fill_0 = 90, sector_fill_1 = 270,
+                                           outer_fill = 20, inner_fill = 0))
+  
+  w3_mask <- ((create_retinal_mask(grid, n_annuli = 1, n_sectors = 1, 
+                                   temporal_left = T, slope = 0,
+                                   sector_fill_0 = 0, sector_fill_1 = 365,
+                                   outer_fill = 1, inner_fill = 0) -
+                 create_retinal_mask(grid, n_annuli = 8, n_sectors = 24,
+                                     temporal_left = F, slope = 6,
+                                     sector_fill_0 = 210, sector_fill_1 = 150,
+                                     outer_fill = 7, inner_fill = 1) - 
+                 create_retinal_mask(grid, n_annuli = 8, n_sectors = 24,
+                                     temporal_left = F, slope = 0,
+                                     sector_fill_0 = 120, sector_fill_1 = 240,
+                                     outer_fill = 2, inner_fill = 0))>0)+0
+  
+  art_mask <- create_retinal_mask(grid, n_annuli = 8, n_sectors = 24,
+                                  temporal_left = F, slope = 15,
+                                  sector_fill_0 = 300, sector_fill_1 = 130,
+                                  outer_fill = 4, inner_fill = 0)
+  
+  art_thin_mask <- create_retinal_mask(grid, n_annuli = 8, n_sectors = 24,
+                                       temporal_left = F, slope = 15,
+                                       sector_fill_0 = 300, sector_fill_1 = 130,
+                                       outer_fill = 3, inner_fill = 0)
+  
   binocular_sky_mask <- visual_sky_mask * binocular_mask
   binocular_ground_mask <- visual_ground_mask * binocular_mask
   binocular_floor_mask <- visual_floor_mask * binocular_mask
@@ -181,9 +216,12 @@ create_visual_scene_masks <- function(grid) {
   peripheral_floor_mask <- visual_floor_mask * peripheral_mask
   
   return(list(
+    art = art_mask,
+    art_thin = art_thin_mask,
+    w3 = w3_mask,
     ipsi = ipsi_mask,
     binocular = binocular_mask,
-    peripheral = peripheral_mask,
+    peripheral = peripheral_mask ,
     visual_sky = visual_sky_mask,
     visual_ground = visual_ground_mask,
     visual_floor = visual_floor_mask,
@@ -192,7 +230,8 @@ create_visual_scene_masks <- function(grid) {
     peripheral_sky = peripheral_sky_mask,
     peripheral_ground = peripheral_ground_mask,
     peripheral_floor = peripheral_floor_mask,
-    binocular_floor = binocular_floor_mask
+    binocular_floor = binocular_floor_mask,
+    horizon = visual_horizon_mask
   ))
 }
 
@@ -341,12 +380,12 @@ apply_masks <- function(df, masks) {
   # Filter dataframe to keep only cells within the circle
   df <- df %>%
     filter(inside == 1) %>%
-    select(-inside)
+    dplyr::select(-inside)
   
   return(df)
 }
 # Identify index of valid maps
-rgc_path <- file.path(ROOT_DIR, "rgc_expMat_with_Studyregions_transformedCoords.csv")
+rgc_path <- file.path(DATA_DIR, "rgc_expMat_with_Studyregions_transformedCoords.csv")
 
 labeled_rgc_path <- paste0(ROOT_DIR, "volcan_expression_matrix.csv")
 
@@ -360,7 +399,7 @@ if (!file.exists(labeled_rgc_path)) {
                     "study_region", "X_dv", "Y_dv")
   
   rgc_df <- read_csv(rgc_path) %>%
-    select(-rgc_metadata) %>%
+    dplyr::select(-any_of(rgc_metadata)) %>%
     rename(x = X_circ,
            y = Y_circ)
   
@@ -380,12 +419,12 @@ if (!file.exists(labeled_rgc_path)) {
   write.csv(rgc_df, labeled_rgc_path)
 } else {
   rgc_df <- read_csv(labeled_rgc_path)[,-1]
-  mask_cols <- c(names(rgc_df)[304:315], "areacentralis")
+  mask_cols <- c(names(rgc_df)[304:length(rgc_df)])
 }
 
 
 mask_sanity_check_summary <- rgc_df %>%
-  select(Prediction, mask_cols) %>%
+  dplyr::select(Prediction, mask_cols) %>%
   gather(key = "Mask", value = 'value', -Prediction) %>%
   group_by(Prediction, Mask) %>%
   summarize(N = n(),
@@ -396,7 +435,14 @@ mask_sanity_check_summary <- rgc_df %>%
 
 conditions_to_skip <- mask_sanity_check_summary %>%
   filter(Ratio_1s <=1/7) %>%
-  select(Prediction, Mask)
+  dplyr::select(Prediction, Mask)
+
+
+if (mean(!is.na(RUN_SUBSET))) {
+  rgc_df <- rgc_df %>%
+    dplyr::select(-all_of(mask_cols[!(mask_cols %in% RUN_SUBSET)]))
+  mask_cols <- RUN_SUBSET
+}
   
 #=============================================================================
 # Generate Volcano Plot DFs and visualizations
@@ -452,7 +498,7 @@ conditions_to_skip <- mask_sanity_check_summary %>%
 #       pct_in_mask = pct.1,
 #       pct_out_mask = pct.2
 #     ) %>%
-#     select(gene, log2FC, p_value, adj_p_value, neg_log10_p, pct_in_mask, pct_out_mask)
+#     dplyr::select(gene, log2FC, p_value, adj_p_value, neg_log10_p, pct_in_mask, pct_out_mask)
 #   
 #   return(results)
 # }
@@ -500,7 +546,7 @@ calculate_de_stats <- function(data, genes,
       mean_expr_in_mask = data_by_target[gene, "g1"],  # Changed from "1" to "g1"
       mean_expr_out_mask = data_by_target[gene, "g0"]  # Changed from "0" to "g0"
     ) %>%
-    select(gene, log2FC, p_value, adj_p_value, neg_log10_p, 
+    dplyr::select(gene, log2FC, p_value, adj_p_value, neg_log10_p, 
            pct_in_mask, pct_out_mask, 
            mean_expr_in_mask, mean_expr_out_mask)
   
@@ -575,7 +621,7 @@ for (mask in mask_cols) {
         # Explicitly ensure it's numeric
         mutate(target = as.numeric(!!sym(mask))) %>%
         # Remove the mask columns and coordinates
-        select(-all_of(mask_cols), -x, -y, -Prediction)
+        dplyr::select(-all_of(mask_cols), -x, -y, -Prediction)
 
       # Calculate statistics
       results <- calculate_de_stats(cell_type_data, gene_cols, 
@@ -628,86 +674,6 @@ hits <- all_results %>%
   filter(adj_p_value < p_thresh & abs(log2FC) > log2FC_thresh  )
 write_csv(hits, file.path(ROOT_DIR, "volcanoes", paste0(seurat.method, "_", p_thresh, "_", log2FC_thresh,"_signifigant_volcano_results.csv")))
 
-
-# Create custom p-value border color function
-get_pvalue_color <- function(p) {
-  case_when(
-    p >= 0.05 ~ "white",
-    p >= 0.01 ~ "white",
-    p >= 0.001 ~ "grey",
-    TRUE ~ "black"
-  )
-}
-
-# Add border color column
-hits <- hits %>%
-  mutate(border_color = get_pvalue_color(adj_p_value))
-
-# Define mask subsets
-subset1_masks <- c("binocular", "ipsi", "visual_ground", "visual_floor")
-subset2_masks <- c("binocular_floor", "binocular_ground", "binocular_sky", 
-                   "binocular", "peripheral_ground", "peripheral_sky")
-
-# Create base plotting function
-create_heatmap <- function(data, title) {
-  ggplot(data, aes(x = cell_type, y = gene)) +
-    geom_point(aes(fill = log2FC, color = border_color), 
-               shape = 21, size = 1) +
-    scale_fill_gradient2(
-      low = "blue", 
-      mid = "white", 
-      high = "red", 
-      midpoint = 0,
-      name = "Log2 Fold Change"
-    ) +
-    scale_color_identity() +
-    facet_wrap(~mask, scales = "free_y", ncol = 2) +
-    theme_minimal() +
-    theme(
-      panel.background = element_rect(fill = "white", color = NA),
-      plot.background = element_rect(fill = "white", color = NA),
-      axis.text.x = element_text(angle = 45, hjust = 1),
-      panel.grid.major = element_blank(),
-      panel.grid.minor = element_blank(),
-      strip.background = element_rect(fill = "grey90"),
-      strip.text = element_text(face = "bold"),
-      axis.text.y = element_text(size = 4)  # Smaller gene labels
-    ) +
-    labs(
-      x = "Cell Type",
-      y = "Gene",
-      title = title
-    )
-}
-
-# Create and save first subset plot
-p1 <- create_heatmap(
-  hits %>% filter(mask %in% subset1_masks),
-  "Differential Expression Patterns - Basic Regions"
-)
-
-ggsave(
-  filename = file.path(ROOT_DIR, "volcanoes", paste0(seurat.method, "_", p_thresh, "_", log2FC_thresh,"differential_expression_heatmap_subset1.png")),
-  plot = p1,
-  width = 12,
-  height = 15,
-  dpi = 300
-)
-
-# Create and save second subset plot
-p2 <- create_heatmap(
-  hits %>% filter(mask %in% subset2_masks),
-  "Differential Expression Patterns - Specialized Regions"
-)
-
-ggsave(
-  filename = file.path(ROOT_DIR, "volcanoes", paste0(seurat.method, "_", p_thresh, "_", log2FC_thresh,"_differential_expression_heatmap_subset.png")),
-  plot = p2,
-  width = 12,
-  height = 15,
-  dpi = 300
-)
-
 ######################################################################################
 
 # Create directory for pooled analysis
@@ -726,7 +692,7 @@ for (mask in mask_cols) {
   # Get data for this mask, now ignoring cell type distinctions
   rgc_df_pooled <- rgc_df %>%
     mutate(target = !!sym(mask)) %>%
-    select(-all_of(mask_cols), -x, -y, -Prediction)  # Remove Prediction column
+    dplyr::select(-all_of(mask_cols), -x, -y, -Prediction)  # Remove Prediction column
   
   # Get gene columns (everything except target)
   gene_cols <- names(rgc_df_pooled)[names(rgc_df_pooled) != "target"]
@@ -772,77 +738,3 @@ write_csv(pooled_hits,
           file.path(ROOT_DIR, "volcanoes", "all_rgcs", 
                     paste0(seurat.method, "_",  p_thresh, "_", log2FC_thresh,
                            "_significant_pooled_volcano_results.csv")))
-
-# Create heatmaps for the same mask subsets as before
-# Subset 1: Basic regions
-p1_pooled <- create_heatmap(
-  pooled_hits %>% filter(mask %in% subset1_masks),
-  "Differential Expression Patterns - Basic Regions (All RGCs)"
-)
-
-ggsave(
-  filename = file.path(ROOT_DIR, "volcanoes", "all_rgcs",
-                       paste0(seurat.method, "_",  p_thresh, "_", log2FC_thresh,
-                              "_differential_expression_heatmap_subset1_pooled.png")),
-  plot = p1_pooled,
-  width = 12,
-  height = 15,
-  dpi = 300
-)
-
-# Subset 2: Specialized regions
-p2_pooled <- create_heatmap(
-  pooled_hits %>% filter(mask %in% subset2_masks),
-  "Differential Expression Patterns - Specialized Regions (All RGCs)"
-)
-
-ggsave(
-  filename = file.path(ROOT_DIR, "volcanoes", "all_rgcs",
-                       paste0(seurat.method, "_", p_thresh, "_", log2FC_thresh,
-                              "_differential_expression_heatmap_subset2_pooled.png")),
-  plot = p2_pooled,
-  width = 12,
-  height = 15,
-  dpi = 300
-)
-
-# Print summary of results
-cat("\nPooled Analysis Summary:\n")
-for (mask in mask_cols) {
-  sig_genes <- pooled_hits %>%
-    filter(mask == mask) %>%
-    nrow()
-  cat("Method:", seurat.method, " Mask:", mask, "- Significant DE genes:", sig_genes, "\n")
-}
-
-# Create a comparison of cell-type specific vs pooled results
-comparison_summary <- bind_rows(
-  hits %>% 
-    group_by(mask) %>%
-    summarize(n_significant = n(), analysis_type = "Cell-type specific"),
-  pooled_hits %>%
-    group_by(mask) %>%
-    summarize(n_significant = n(), analysis_type = "Pooled")
-)
-
-# Create comparison plot
-p_comparison <- ggplot(comparison_summary, 
-                       aes(x = mask, y = n_significant, fill = analysis_type)) +
-  geom_bar(stat = "identity", position = "dodge") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(title = "Comparison of Significant DE Genes",
-       x = "Mask",
-       y = "Number of Significant Genes",
-       fill = "Analysis Type")
-
-# Save comparison plot
-ggsave(
-  filename = file.path(ROOT_DIR, "volcanoes", "all_rgcs",
-                       "cell_type_vs_pooled_comparison.png"),
-  plot = p_comparison,
-  width = 12,
-  height = 8,
-  dpi = 300
-)
-

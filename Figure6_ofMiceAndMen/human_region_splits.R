@@ -2,15 +2,19 @@ library(tidyverse)
 library(patchwork)
 library(ggpubr)
 library(ggrepel)
+library(dplyr)
 
-ROOT_DIR <- '/home/sam/Primate_Comparison/'
+
+DATA_DIR <- '/home/sam/MappingAllMurineRGCs/Data/'
+ROOT_DIR <- paste0(DATA_DIR, 'Figure6_Outputs/')
 orthotype_key <- read.csv(paste0(ROOT_DIR, 'Orthotype_mapping.csv')) %>%
   dplyr::select(Species, Location, Subtype, Orthotype)
 
-mouse_Locations <- read.csv('/home/sam/FinalRGC_xenium/GlobalStatistics_Smoothed/cluster_assignments.csv') %>%
+mouse_Locations <- read.csv(paste0(DATA_DIR,'Figure3_Outputs/cluster_assignments.csv') )%>%
   mutate(Species = "Mouse") %>%
   rename(Subtype = Label,
-         Location = Cluster)
+         Location = Cluster) %>%
+  dplyr::select(-Method)
 mouse_ortho2Location <- orthotype_key %>%
   filter(Species == 'Mouse') %>%
   dplyr::select(-Location) %>%
@@ -19,17 +23,17 @@ orthotype_key <- orthotype_key %>%
   filter(Species != 'Mouse') %>%
   rbind(mouse_ortho2Location)
 
-write.csv(orthotype_key, file = '/home/sam/FinalRGC_xenium/mouse_primate_orthotypes_by_Location.csv')
+write.csv(orthotype_key, file = paste0(ROOT_DIR, 'mouse_primate_orthotypes_by_Location.csv'))
 
 
-ortholog_key <- read.csv( paste0(ROOT_DIR, 'mouse2primate_xeniumOrthologs_verified.csv'))
+ortholog_key <- read.csv( paste0(DATA_DIR, 'mouse2primate_xeniumOrthologs_verified.csv'))
   
 
 human <- read.csv(paste0(ROOT_DIR, 'human_spatial_scRNAseq_xeniumSubset.csv'))
 huamn_ortholog_mapping <- ortholog_key %>%
   dplyr::select(xenium_target, human_id) %>%
   drop_na() %>%
-  distinct()
+  dplyr::distinct()
 
 # Identify which xenium_targets will have duplicates
 duplicate_counts <- huamn_ortholog_mapping %>%
@@ -207,7 +211,7 @@ mouse_ortho <- orthotype_key %>%
 #        Location = factor(Location, levels = c("Fovea", "Periphery"))
 #        )
 
-mouse <-read.csv("/home/sam/FinalRGC_xenium/volcan_expression_matrix.csv")%>%
+mouse <-read.csv(paste0(DATA_DIR, "Figure5_Outputs/volcan_expression_matrix.csv"))%>%
   dplyr::select(-c(X, x, y, peripheral, visual_sky, visual_ground, visual_floor,     
                    binocular, binocular_sky,binocular_ground, peripheral_sky, peripheral_ground, 
                    peripheral_floor, binocular_floor)  ) %>%
@@ -495,7 +499,7 @@ plot_gene_distribution_with_stats <- function(data_list, species_names, gene_nam
 
 
 
-volcanoes <- read_csv('/home/sam/FinalRGC_xenium/volcanoes_MAST/all_volcano_results.csv') 
+volcanoes <- read_csv(paste0(DATA_DIR, 'Figure5_Outputs/volcanoes/all_volcano_results.csv') )
 
 genes <- unique(volcanoes$gene) 
 
@@ -629,12 +633,10 @@ close(pb)
 # Combine all results and remove NULL entries
 final_comprehensive_results <- bind_rows(all_results)  
   
-  
-  
-  
-  
 
 # Save results
+dir.create(file.path(ROOT_DIR,  "AreaCentralis_ttest"), showWarnings = FALSE)
+
 write.csv(final_comprehensive_results, 
           file = file.path(ROOT_DIR, "AreaCentralis_ttest", "comprehensive_results.csv"),
           row.names = FALSE)
@@ -657,10 +659,6 @@ message("\nAnalysis complete. Results saved to: ",
         file.path(ROOT_DIR, "AreaCentralis_ttest", "ACvPeriphery_results.csv"))
 
 
-
-
-
-=
 
 
 analyze_species_correlations <- function(final_comprehensive_results, 
@@ -861,7 +859,7 @@ for (gene_set in list(sodium_channels,
 functional_measures <- c("Functional_Group","RF_size","sup_PeakFiringRate",
                          "sup_ResponseDuration","sup_BLFiringRate","sup_SuppressionIndex",     
                          "sup_OnOffIndex", "sup_PeakResponseLatency")
-unif_df <- read.csv('/home/sam/FinalRGC_xenium/RGC Subtype Unification.csv') %>%
+unif_df <- read.csv(paste0(DATA_DIR, 'RGC Subtype Unification.csv')) %>%
   filter(Goetz2022_PatchSeq == 1) %>%
   mutate(Subtype = paste0("T", Tran2019_Clusters),
          Functional_Group = factor(Functional_Group),
@@ -1072,8 +1070,25 @@ GABA_mouse <- mouse %>%
                 list(prop = ~./alpha),
                 .names = "{.col}_prop")) 
 
+GABA_mouse_stoichiometries <- GABA_mouse %>%
+  dplyr::select(Subtype, Location, alpha, beta, gamma, rho) %>%
+  group_by(Location, Subtype) %>%
+  mutate(alpha =round(alpha,2),
+         beta=round(beta),
+         gamma=round(gamma,2),
+         rho=round(rho,2),
+         min_val = min(alpha, beta, gamma, rho),
+         factor = 1/min_val,
+         alpha =round(factor*alpha,2),
+         beta=round(factor*beta),
+         gamma=round(factor*gamma,2),
+         rho=round(factor*rho,2),
+         max_val = max(alpha, beta, gamma, rho)         
+         ) %>%
+  dplyr::select(-factor) %>%
 
-unif_GABA <- read.csv('/home/sam/FinalRGC_xenium/RGC Subtype Unification.csv') %>%
+
+unif_GABA <- read.csv(paste0(DATA_DIR, 'RGC Subtype Unification.csv')) %>%
   filter(Goetz2022_PatchSeq == 1) %>%
   mutate(Subtype = paste0("T", Tran2019_Clusters),
          Functional_Group = factor(Functional_Group) ) %>%
@@ -1106,7 +1121,7 @@ GABA_human <- human %>%
                 list(prop = ~./alpha),
                 .names = "{.col}_prop")) 
 
-GABA_mouse <- mouse %>%
+GABA_mouse_sum <- mouse %>%
   dplyr::select(Location, any_of(gaba_receptors)) %>%
   # Calculate indices for each receptor
   mutate(alpha = Gabra1+ Gabra2 + Gabra3 + Gabra4,
@@ -1121,7 +1136,451 @@ GABA_mouse <- mouse %>%
 
 
 
+####################################################################################
+# CSV table output of GABA stoichiometries
+##################################################################################3
+# Function to calculate receptor stoichiometries
+calculate_stoichiometries <- function(data, species_name, group_cols = NULL) {
+  # Set default group columns based on species
+  if (is.null(group_cols)) {
+    if (species_name == "Human") {
+      group_cols <- c("organ", "rgc_cluster")
+    } else {
+      group_cols <- c("Location", "Subtype")
+    }
+  }
+  
+  # Define receptor groups
+  gaba_receptors <- c("Gabra1", "Gabra2", "Gabra3", "Gabra4", 
+                      "Gabrb1", "Gabrb3",
+                      "Gabrg1", "Gabrg2", "Gabrg3",
+                      "Gabrr1", "Gabrr2", "Gabrr3")
+  
+  glycine_receptors <- c("Glra1", "Glra2", "Glrb")
+  
+  # Add missing columns with NA values
+  missing_cols <- setdiff(c(gaba_receptors, glycine_receptors), names(data))
+  if (length(missing_cols) > 0) {
+    for (col in missing_cols) {
+      data[[col]] <- NA_real_
+    }
+  }
+  
+  # Calculate combined metrics
+  results <- data %>%
+    # Select relevant columns
+    dplyr::select(all_of(group_cols), any_of(c(gaba_receptors, glycine_receptors))) %>%
+    
+    # Calculate combined metrics
+    mutate(
+      # GABA receptor subunits
+      alpha = rowSums(across(c("Gabra1", "Gabra2", "Gabra3", "Gabra4"), ~replace_na(., 0))),
+      beta = rowSums(across(c("Gabrb1", "Gabrb3"), ~replace_na(., 0))),
+      gamma = rowSums(across(c("Gabrg1", "Gabrg2", "Gabrg3"), ~replace_na(., 0))),
+      rho = rowSums(across(c("Gabrr1", "Gabrr2", "Gabrr3"), ~replace_na(., 0))),
+      
+      # Glycine receptor subunits
+      Glyr_alpha = rowSums(across(c("Glra1", "Glra2"), ~replace_na(., 0))),
+      Glyr_beta = replace_na(Glrb, 0),
+      
+      # Combined metrics
+      GABA_r_all = alpha + beta + gamma + rho,
+      Glyr_all = Glyr_alpha + Glyr_beta
+    ) %>%
+    
+    # Group by location and subtype
+    group_by(across(all_of(group_cols))) %>%
+    summarise(across(everything(), mean, na.rm = TRUE), .groups = "drop") %>%
+    
+    # Calculate GABA stoichiometries
+    mutate(
+      # Round initial values
+      across(c(alpha, beta, gamma, rho), ~round(., 2)),
+      
+      # Calculate GABA stoichiometry factors
+      min_val_gaba = pmin(alpha, beta, gamma, rho, na.rm = TRUE),
+      gaba_factor = ifelse(min_val_gaba > 0, 1/min_val_gaba, NA_real_),
+      
+      # Calculate normalized GABA stoichiometries as integers
+      alpha_stoich = round(alpha * gaba_factor),
+      beta_stoich = round(beta * gaba_factor),
+      gamma_stoich = round(gamma * gaba_factor),
+      rho_stoich = round(rho * gaba_factor),
+      
+      # Calculate Glycine stoichiometries
+      min_val_gly = pmin(Glyr_alpha, Glyr_beta, na.rm = TRUE),
+      gly_factor = ifelse(min_val_gly > 0, 1/min_val_gly, NA_real_),
+      Glyr_alpha_stoich = round(Glyr_alpha * gly_factor),
+      Glyr_beta_stoich = round(Glyr_beta * gly_factor),
+      
+      # Calculate GABA vs Glycine stoichiometry
+      min_val_total = pmin(GABA_r_all, Glyr_all, na.rm = TRUE),
+      total_factor = ifelse(min_val_total > 0, 1/min_val_total, NA_real_),
+      GABA_total_stoich = round(GABA_r_all * total_factor),
+      Glyr_total_stoich = round(Glyr_all * total_factor)
+    ) %>%
+    
+    # Add species identifier
+    mutate(Species = species_name) %>%
+    
+    # Select and arrange columns
+    dplyr::select(
+      Species,
+      all_of(group_cols),
+      # Raw subunit values
+      all_of(gaba_receptors),
+      all_of(glycine_receptors),
+      # Combined metrics
+      alpha, beta, gamma, rho,
+      Glyr_alpha, Glyr_beta,
+      GABA_r_all, Glyr_all,
+      # Stoichiometries
+      ends_with("stoich")
+    )
+  
+  # Calculate aggregate (ALL) values
+  all_results <- results %>%
+    ungroup() %>%
+    dplyr::select(-all_of(group_cols[2])) %>%  # Remove Subtype/rgc_cluster
+    group_by(Species, across(all_of(group_cols[1]))) %>%  # Group by Species and Location/organ
+    summarise(across(everything(), mean, na.rm = TRUE), .groups = "drop") %>%
+    mutate(!!sym(group_cols[2]) := "ALL") %>%  # Add back Subtype/rgc_cluster column
+    dplyr::select(names(results))  # Reorder columns to match
+  
+  # Combine regular and ALL results
+  bind_rows(results, all_results)
+}
+
+# Process each species dataset
+mouse_results <- calculate_stoichiometries(mouse, "Mouse")
+human_results <- calculate_stoichiometries(human, "Human") %>%
+  rename(Location = organ, Subtype = rgc_cluster)
+macaque_results <- calculate_stoichiometries(macaque, "Macaque")
+
+# Combine all results
+all_results <- bind_rows(mouse_results, human_results, macaque_results) %>%
+  dplyr::select(Species, Location, Subtype, 
+         GABA_total_stoich,  Glyr_total_stoich,
+         alpha_stoich, beta_stoich, gamma_stoich, rho_stoich,
+         Glyr_alpha_stoich, Glyr_beta_stoich,
+         alpha, Gabra1, Gabra2, Gabra3, Gabra4,
+         beta, Gabrb1,Gabrb3,           
+         gamma, Gabrg1, Gabrg2, Gabrg3, 
+         rho, Gabrr1, Gabrr2, Gabrr3,
+         Glyr_alpha, Glra1, Glra2, 
+         Glyr_beta, Glrb,             
+         GABA_r_all, Glyr_all, 
+         )
+
+# Write output
+write.csv(all_results, file.path(ROOT_DIR, "GABA_stoichiometries.csv"), row.names = FALSE)
 
 
 
-          
+
+# Function to normalize stoichiometry values
+normalize_stoich <- function(df) {
+  df %>%
+    group_by(Species, Location, Subtype) %>%
+    mutate(total = sum(stoichiometry),
+           stoichiometry = stoichiometry / total) %>%
+    ungroup()
+}
+
+# Function to calculate max stoichiometric range for GABA receptors
+calc_gaba_range <- function(data) {
+  data %>%
+    dplyr::mutate(
+      max_ratio = pmax(
+        alpha_stoich/beta_stoich,
+        alpha_stoich/gamma_stoich,
+        beta_stoich/gamma_stoich,
+        na.rm = TRUE
+      ),
+      min_ratio = pmin(
+        alpha_stoich/beta_stoich,
+        alpha_stoich/gamma_stoich,
+        beta_stoich/gamma_stoich,
+        na.rm = TRUE
+      ),
+      stoich_range = max_ratio/min_ratio
+    )
+}
+
+# Prepare base dataset with locations renamed
+base_data <- all_results %>%
+  filter(Species %in% c("Human", "Mouse")) %>%
+  filter(
+    (Species == "Human" & Location %in% c("peripheral region of retina", "fovea centralis")) |
+      (Species == "Mouse" & Location %in% c("Fovea", "Periphery"))) %>%
+  dplyr::mutate(
+    Location = case_when(
+      Location == "peripheral region of retina" ~ "Periphery",
+      Location == "fovea centralis" ~ "Fovea",
+      Location == "Fovea" ~ "ART",
+      TRUE ~ Location
+    )
+  )
+
+# Find extreme GABA stoichiometry subtypes
+extreme_subtypes <- base_data %>%
+  group_by(Species, Subtype) %>%
+  calc_gaba_range() %>%
+  dplyr::summarise(max_range = max(stoich_range, na.rm = TRUE), .groups = "drop") %>%
+  group_by(Species) %>%
+  dplyr::slice(which.max(max_range), which.min(max_range)) %>%
+  dplyr::pull(Subtype)
+
+# Prepare GABA visualization data
+gaba_viz_data <- base_data %>%
+  filter(Subtype %in% c("ALL", extreme_subtypes)) %>%
+  dplyr::select(Species, Location, Subtype, 
+                alpha_stoich, beta_stoich, gamma_stoich, rho_stoich) %>%
+  # Add control data
+  bind_rows(data.frame(
+    Species = "Control",
+    Location = "Expected",
+    Subtype = "Expected",
+    alpha_stoich = 20,
+    beta_stoich = 20,
+    gamma_stoich = 10,
+    rho_stoich = 1
+  )) %>%
+  # Create ordered display groups
+  dplyr::mutate(
+    display_group = case_when(
+      Subtype == "Expected" ~ paste0("A_", Subtype),
+      Subtype == "ALL" & Species == "Mouse" & Location == "ART" ~ "B_Mouse_ALL_ART",
+      Subtype == "ALL" & Species == "Mouse" & Location == "Periphery" ~ "C_Mouse_ALL_Periphery",
+      Subtype == "ALL" & Species == "Human" & Location == "Fovea" ~ "D_Human_ALL_Fovea",
+      Subtype == "ALL" & Species == "Human" & Location == "Periphery" ~ "E_Human_ALL_Periphery",
+      TRUE ~ paste0(
+        LETTERS[6 + as.numeric(factor(Subtype))],
+        "_",
+        Species,
+        "_",
+        Subtype,
+        "_",
+        Location
+      )
+    ),
+    display_group = factor(display_group, levels = sort(unique(display_group)))
+  ) %>%
+  # Reshape for plotting
+  pivot_longer(cols = ends_with("stoich"),
+               names_to = "subunit",
+               values_to = "stoichiometry") %>%
+  dplyr::mutate(subunit = factor(subunit, 
+                                 levels = c("alpha_stoich", "beta_stoich", 
+                                            "gamma_stoich", "rho_stoich"))) %>%
+  # Normalize values
+  normalize_stoich()
+
+# Find extreme Glycine stoichiometry subtypes
+gly_extreme_subtypes <- base_data %>%
+  group_by(Species, Subtype) %>%
+  dplyr::mutate(gly_ratio = Glyr_alpha_stoich/Glyr_beta_stoich) %>%
+  dplyr::summarise(ratio_range = max(gly_ratio, na.rm = TRUE)/min(gly_ratio, na.rm = TRUE), 
+                   .groups = "drop") %>%
+  group_by(Species) %>%
+  dplyr::slice(which.max(ratio_range), which.min(ratio_range)) %>%
+  dplyr::pull(Subtype)
+
+# Prepare Glycine visualization data
+gly_viz_data <- base_data %>%
+  filter(Subtype %in% c("ALL", gly_extreme_subtypes)) %>%
+  dplyr::select(Species, Location, Subtype, 
+                Glyr_alpha_stoich, Glyr_beta_stoich) %>%
+  # Add control data
+  bind_rows(data.frame(
+    Species = "Control",
+    Location = "Expected",
+    Subtype = "Expected",
+    Glyr_alpha_stoich = 3,
+    Glyr_beta_stoich = 2
+  )) %>%
+  # Create ordered display groups (matching GABA order)
+  dplyr::mutate(
+    display_group = case_when(
+      Subtype == "Expected" ~ paste0("A_", Subtype),
+      Subtype == "ALL" & Species == "Mouse" & Location == "ART" ~ "B_Mouse_ALL_ART",
+      Subtype == "ALL" & Species == "Mouse" & Location == "Periphery" ~ "C_Mouse_ALL_Periphery",
+      Subtype == "ALL" & Species == "Human" & Location == "Fovea" ~ "D_Human_ALL_Fovea",
+      Subtype == "ALL" & Species == "Human" & Location == "Periphery" ~ "E_Human_ALL_Periphery",
+      TRUE ~ paste0(
+        LETTERS[6 + as.numeric(factor(Subtype))],
+        "_",
+        Species,
+        "_",
+        Subtype,
+        "_",
+        Location
+      )
+    ),
+    display_group = factor(display_group, levels = sort(unique(display_group)))
+  ) %>%
+  pivot_longer(cols = ends_with("stoich"),
+               names_to = "subunit",
+               values_to = "stoichiometry") %>%
+  dplyr::mutate(subunit = factor(subunit, 
+                                 levels = c("Glyr_alpha_stoich", "Glyr_beta_stoich"))) %>%
+  normalize_stoich()
+
+# Prepare ratio visualization data using the same subtypes as GABA
+ratio_viz_data <- base_data %>%
+  filter(Subtype %in% c("ALL", extreme_subtypes)) %>%
+  dplyr::select(Species, Location, Subtype, 
+                GABA_total_stoich, Glyr_total_stoich) %>%
+  # Add control data
+  bind_rows(data.frame(
+    Species = "Control",
+    Location = "Expected",
+    Subtype = "Expected",
+    GABA_total_stoich = 55,
+    Glyr_total_stoich = 45
+  )) %>%
+  # Create ordered display groups (matching GABA order)
+  dplyr::mutate(
+    display_group = case_when(
+      Subtype == "Expected" ~ paste0("A_", Subtype),
+      Subtype == "ALL" & Species == "Mouse" & Location == "ART" ~ "B_Mouse_ALL_ART",
+      Subtype == "ALL" & Species == "Mouse" & Location == "Periphery" ~ "C_Mouse_ALL_Periphery",
+      Subtype == "ALL" & Species == "Human" & Location == "Fovea" ~ "D_Human_ALL_Fovea",
+      Subtype == "ALL" & Species == "Human" & Location == "Periphery" ~ "E_Human_ALL_Periphery",
+      TRUE ~ paste0(
+        LETTERS[6 + as.numeric(factor(Subtype))],
+        "_",
+        Species,
+        "_",
+        Subtype,
+        "_",
+        Location
+      )
+    ),
+    display_group = factor(display_group, levels = sort(unique(display_group))),
+    total = GABA_total_stoich + Glyr_total_stoich,
+    GABA_prop = GABA_total_stoich/total,
+    Gly_prop = Glyr_total_stoich/total
+  ) %>%
+  pivot_longer(
+    cols = c(GABA_prop, Gly_prop),
+    names_to = "receptor_type",
+    values_to = "proportion"
+  ) %>%
+  dplyr::mutate(
+    receptor_type = factor(receptor_type, 
+                           levels = c("GABA_prop", "Gly_prop"))
+  )
+
+
+
+# Function to create nice labels
+create_labels <- function(display_group) {
+  gsub("_", " ", substr(display_group, 3, nchar(display_group)))
+}
+
+# GABA Plot
+p1 <- ggplot(gaba_viz_data, 
+             aes(x = "1", y = stoichiometry, fill = subunit)) +
+  geom_bar(stat = "identity", position = "fill") +
+  facet_grid(~display_group, labeller = labeller(display_group = create_labels)) +
+  scale_fill_brewer(palette = "Set1", 
+                    labels = c("α", "β", "γ", "ρ")) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "GABA Receptor Stoichiometry",
+       y = "Relative Proportion",
+       x = NULL,
+       fill = "Subunit") +
+  theme(axis.text.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        strip.text.x = element_text(angle = 45))
+
+# Glycine Plot
+p2 <- ggplot(gly_viz_data, 
+             aes(x = "1", y = stoichiometry, fill = subunit)) +
+  geom_bar(stat = "identity", position = "fill") +
+  facet_grid(~display_group, labeller = labeller(display_group = create_labels)) +
+  scale_fill_brewer(palette = "Set2", 
+                    labels = c("α", "β")) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "Glycine Receptor Stoichiometry",
+       y = "Relative Proportion",
+       x = NULL,
+       fill = "Subunit") +
+  theme(axis.text.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        strip.text.x = element_text(angle = 45))
+
+# Ratio Plot
+p3 <- ggplot(ratio_viz_data, 
+             aes(x = "1", y = proportion, fill = receptor_type)) +
+  geom_bar(stat = "identity", position = "fill") +
+  facet_grid(~display_group, labeller = labeller(display_group = create_labels)) +
+  scale_fill_brewer(palette = "Set3", 
+                    labels = c("GABA", "Glycine")) +
+  scale_y_continuous(labels = scales::percent) +
+  theme_minimal() +
+  labs(title = "GABA/Glycine Receptor Ratio",
+       y = "Relative Proportion",
+       x = NULL,
+       fill = "Receptor") +
+  theme(axis.text.x = element_blank(),
+        panel.grid.major.x = element_blank(),
+        strip.text.x = element_text(angle = 45))
+
+
+# Combine plots
+combined_plot <- p1 / p2 / p3 +
+  plot_layout(heights = c(1, 1, 1)) +
+  plot_annotation(
+    title = "Receptor Stoichiometry Comparison",
+    theme = theme_minimal()
+  )
+
+# Save the plot
+ggsave(file.path(ROOT_DIR, "receptor_stoichiometry_comparison.pdf"), 
+       combined_plot, 
+       width = 20, 
+       height = 12)
+
+# Prepare GABA data for export
+gaba_export <- gaba_viz_data %>%
+  dplyr::select(Species, Location, Subtype, display_group, subunit, stoichiometry) %>%
+  tidyr::pivot_wider(
+    names_from = subunit,
+    values_from = stoichiometry
+  ) %>%
+  dplyr::arrange(display_group)
+
+# Prepare Glycine data for export
+glycine_export <- gly_viz_data %>%
+  dplyr::select(Species, Location, Subtype, display_group, subunit, stoichiometry) %>%
+  tidyr::pivot_wider(
+    names_from = subunit,
+    values_from = stoichiometry
+  ) %>%
+  dplyr::arrange(display_group)
+
+# Prepare ratio data for export
+ratio_export <- ratio_viz_data %>%
+  dplyr::select(Species, Location, Subtype, display_group, receptor_type, proportion) %>%
+  tidyr::pivot_wider(
+    names_from = receptor_type,
+    values_from = proportion
+  ) %>%
+  dplyr::arrange(display_group)
+
+# Save the files with clear names
+write.csv(gaba_export, 
+          file.path(ROOT_DIR, "gaba_receptor_stoichiometry_proportions.csv"), 
+          row.names = FALSE)
+
+write.csv(glycine_export, 
+          file.path(ROOT_DIR, "glycine_receptor_stoichiometry_proportions.csv"), 
+          row.names = FALSE)
+
+write.csv(ratio_export, 
+          file.path(ROOT_DIR, "gaba_glycine_receptor_proportions.csv"), 
+          row.names = FALSE)
